@@ -207,9 +207,6 @@ st.download_button(
     file_name="ejemplo_TRUNA_ELE_textos.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 ),
-        file_name="ejemplo_TRUNA_ELE_textos.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
 
 with tab2:
     single_id = st.text_input("ID del texto", value="demo_001")
