@@ -197,9 +197,16 @@ with tab1:
             "La inteligencia artificial puede ayudar a los estudiantes, pero también exige responsabilidad. Por eso, es importante aprender a usarla de manera crítica."
         ]
     })
-    st.download_button(
-        "Descargar ejemplo de Excel",
-        data=to_excel_bytes(example),
+buffer = io.BytesIO()
+with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+    example.to_excel(writer, index=False, sheet_name="Textos")
+
+st.download_button(
+    "Descargar ejemplo de Excel",
+    data=buffer.getvalue(),
+    file_name="ejemplo_TRUNA_ELE_textos.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+),
         file_name="ejemplo_TRUNA_ELE_textos.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
