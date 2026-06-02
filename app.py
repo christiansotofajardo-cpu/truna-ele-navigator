@@ -1,252 +1,249 @@
+
 import io
-import json
+import re
 from pathlib import Path
 
-import joblib
 import numpy as np
 import pandas as pd
 import streamlit as st
 
-from text_features import TextFeatureExtractor
+LEVELS = ["A1", "A2", "B1", "B2", "C1"]
 
-APP_DIR = Path(__file__).parent
-MODELS_DIR = APP_DIR / 'models'
-EXAMPLES_DIR = APP_DIR / 'examples'
-IMG_PATH = APP_DIR / 'assets' / 'truna_ele_infografia.png'
-
-LEVEL_MAP = {1: 'A1', 2: 'A2', 3: 'B1', 4: 'B2', 5: 'C1'}
-MODE_LABELS = {'Narrativo': 'narrativo', 'Argumentativo': 'argumentativo'}
 DIMENSIONS = [
-    'Dispersión y variedad estructural',
-    'Coherencia semántica global',
-    'Riqueza léxica y precisión',
-    'Carga emocional',
-    'Referencialidad y conectividad',
-    'Centralidad discursiva y estabilidad',
+    "Dispersión y variedad estructural",
+    "Coherencia semántica global",
+    "Riqueza léxica y precisión",
+    "Carga emocional",
+    "Referencialidad y conectividad",
+    "Centralidad discursiva y estabilidad",
 ]
 
-@st.cache_resource
-def load_metadata():
-    return json.loads((MODELS_DIR / 'metadata.json').read_text(encoding='utf-8'))
+CONNECTORS = {
+    "y", "pero", "porque", "aunque", "entonces", "después", "luego", "también",
+    "además", "sin embargo", "por eso", "por lo tanto", "cuando", "mientras",
+    "antes", "finalmente", "primero", "segundo", "por ejemplo"
+}
+POS_WORDS = {"feliz", "contento", "alegre", "bueno", "bonito", "interesante", "maravilloso", "mejor"}
+NEG_WORDS = {"triste", "malo", "difícil", "problema", "peor", "aburrido", "cansado", "preocupado"}
 
-@st.cache_resource
-def load_model(kind: str, mode_key: str):
-    return joblib.load(MODELS_DIR / f'modelo_{kind}_{mode_key}.joblib')
+def words(text):
+    return re.findall(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+", str(text).lower())
 
+def sentences(text):
+    parts = re.split(r"[.!?¿¡]+", str(text))
+    return [p.strip() for p in parts if p.strip()]
 
-def pct_series(s: pd.Series) -> pd.Series:
-    s = pd.to_numeric(s, errors='coerce')
-    if s.notna().sum() <= 1 or s.max() == s.min():
-        return pd.Series(50.0, index=s.index)
-    return ((s - s.min()) / (s.max() - s.min()) * 100).clip(0, 100).round(1)
+def pct(x, low, high):
+    if pd.isna(x):
+        return 50.0
+    if high == low:
+        return 50.0
+    return float(np.clip((x - low) / (high - low) * 100, 0, 100))
 
+def extract_text_features(text):
+    w = words(text)
+    s = sentences(text)
+    n_words = len(w)
+    n_unique = len(set(w))
+    n_sents = max(len(s), 1)
+    avg_word_len = np.mean([len(x) for x in w]) if w else 0
+    avg_sent_len = n_words / n_sents if n_sents else 0
+    ttr = n_unique / n_words if n_words else 0
+    long_ratio = sum(len(x) >= 7 for x in w) / n_words if n_words else 0
+    connector_count = sum(1 for x in w if x in CONNECTORS)
+    connector_ratio = connector_count / n_words if n_words else 0
+    pos_ratio = sum(1 for x in w if x in POS_WORDS) / n_words if n_words else 0
+    neg_ratio = sum(1 for x in w if x in NEG_WORDS) / n_words if n_words else 0
+    punct_ratio = len(re.findall(r"[,;:]", str(text))) / max(n_words, 1)
+    paragraphs = max(len([p for p in str(text).split("\n") if p.strip()]), 1)
+    lexical_density = sum(1 for x in w if len(x) > 4) / n_words if n_words else 0
 
-def safe_col(df: pd.DataFrame, name: str, default=np.nan) -> pd.Series:
-    if name in df.columns:
-        return pd.to_numeric(df[name], errors='coerce')
-    return pd.Series(default, index=df.index, dtype='float64')
+    return {
+        "n_words": n_words,
+        "n_sents": n_sents,
+        "avg_word_len": avg_word_len,
+        "avg_sentence_length": avg_sent_len,
+        "ttr": ttr,
+        "long_word_ratio": long_ratio,
+        "connector_ratio": connector_ratio,
+        "pos_ratio": pos_ratio,
+        "neg_ratio": neg_ratio,
+        "punct_per_word": punct_ratio,
+        "paragraphs": paragraphs,
+        "lexical_density": lexical_density,
+    }
 
+def dimension_scores_from_text(text):
+    f = extract_text_features(text)
 
-def text_basic_features(texts: pd.Series) -> pd.DataFrame:
-    extractor = TextFeatureExtractor()
-    arr = extractor.transform(texts.fillna('').astype(str))
-    return pd.DataFrame(arr, columns=extractor.feature_names, index=texts.index)
+    dispersion = np.mean([
+        pct(f["avg_sentence_length"], 5, 28),
+        pct(f["ttr"], 0.25, 0.80),
+        pct(f["paragraphs"], 1, 4),
+    ])
+    coherencia = np.mean([
+        pct(f["connector_ratio"], 0.005, 0.08),
+        pct(f["punct_per_word"], 0.01, 0.15),
+        pct(f["n_sents"], 2, 14),
+    ])
+    riqueza = np.mean([
+        pct(f["lexical_density"], 0.20, 0.70),
+        pct(f["avg_word_len"], 3.5, 6.5),
+        pct(f["long_word_ratio"], 0.02, 0.35),
+    ])
+    emocional = np.mean([
+        pct(f["pos_ratio"], 0, 0.04),
+        pct(f["neg_ratio"], 0, 0.03),
+    ])
+    referencialidad = np.mean([
+        pct(f["n_words"], 40, 350),
+        pct(f["connector_ratio"], 0.005, 0.08),
+    ])
+    centralidad = np.mean([
+        100 - abs(pct(f["avg_sentence_length"], 5, 28) - 55) * 1.2,
+        100 - abs(pct(f["ttr"], 0.25, 0.80) - 55) * 1.2,
+    ])
+    centralidad = float(np.clip(centralidad, 0, 100))
 
+    scores = {
+        "Dispersión y variedad estructural": round(dispersion, 1),
+        "Coherencia semántica global": round(coherencia, 1),
+        "Riqueza léxica y precisión": round(riqueza, 1),
+        "Carga emocional": round(emocional, 1),
+        "Referencialidad y conectividad": round(referencialidad, 1),
+        "Centralidad discursiva y estabilidad": round(centralidad, 1),
+    }
+    scores["Perfil multidimensional %"] = round(np.mean(list(scores.values())), 1)
+    return scores
 
-def dimensions_from_text(df: pd.DataFrame) -> pd.DataFrame:
-    out = df.copy()
-    f = text_basic_features(out['texto'])
-    raw = pd.DataFrame(index=out.index)
-    raw['Dispersión y variedad estructural'] = pd.concat([
-        pct_series(f['avg_sentence_length']), pct_series(f['ttr']), pct_series(f['paragraphs'])
-    ], axis=1).mean(axis=1)
-    raw['Coherencia semántica global'] = pd.concat([
-        pct_series(f['connector_ratio']), pct_series(f['punct_per_word']), pct_series(f['n_sents'])
-    ], axis=1).mean(axis=1)
-    raw['Riqueza léxica y precisión'] = pd.concat([
-        pct_series(f['lexical_density']), pct_series(f['avg_word_len']), pct_series(f['long_word_ratio'])
-    ], axis=1).mean(axis=1)
-    raw['Carga emocional'] = pd.concat([
-        pct_series(f['pos_ratio']), pct_series(f['neg_ratio'])
-    ], axis=1).mean(axis=1)
-    raw['Referencialidad y conectividad'] = pd.concat([
-        pct_series(f['n_words']), pct_series(f['connector_ratio'])
-    ], axis=1).mean(axis=1)
-    raw['Centralidad discursiva y estabilidad'] = pd.concat([
-        100 - abs(pct_series(f['avg_sentence_length']) - 50) * 2,
-        100 - abs(pct_series(f['ttr']) - 50) * 2,
-    ], axis=1).mean(axis=1).clip(0, 100)
-    for c in DIMENSIONS:
-        out[c] = raw[c].round(1)
-    out['Perfil multidimensional %'] = raw[DIMENSIONS].mean(axis=1).round(1)
-    return out
-
-
-def dimensions_from_indices(df: pd.DataFrame) -> pd.DataFrame:
-    out = df.copy()
-    ttr = safe_col(out, 'TTR lemma')
-    ttr_fun = safe_col(out, 'TTR function')
-    mtld = safe_col(out, 'TTR Diversidad léxica MTLD')
-    sent_len = safe_col(out, 'SP Promedio Longitud Oracion')
-    lex_density = safe_col(out, 'SP Densidad Léxica')
-    coh = safe_col(out, 'EG local_coherence_PACC')
-    pu = safe_col(out, 'EG local_coherence_PU')
-    pw = safe_col(out, 'EG local_coherence_PW')
-    cos_dist = safe_col(out, 'avg_cos_dist')
-    synt = safe_col(out, 'SP syntactic similarity')
-    noun = safe_col(out, 'TTR noun')
-    arg = safe_col(out, 'TTR argument')
-    joy = safe_col(out, 'joy')
-    pos = safe_col(out, 'POS')
-    neg = safe_col(out, 'NEG')
-    givenness = safe_col(out, 'avg_givenness')
-    centroid = safe_col(out, 'avg_dist_to_centroid')
-    dm = safe_col(out, 'DM all types of discourse markers')
-
-    raw = pd.DataFrame(index=out.index)
-    raw['Dispersión y variedad estructural'] = pd.concat([pct_series(ttr), pct_series(sent_len), pct_series(mtld)], axis=1).mean(axis=1)
-    raw['Coherencia semántica global'] = pd.concat([pct_series(coh), pct_series(pu), pct_series(pw), 100 - pct_series(cos_dist)], axis=1).mean(axis=1)
-    raw['Riqueza léxica y precisión'] = pd.concat([pct_series(lex_density), pct_series(noun), pct_series(arg), pct_series(mtld)], axis=1).mean(axis=1)
-    raw['Carga emocional'] = pd.concat([pct_series(joy), pct_series(pos), pct_series(neg)], axis=1).mean(axis=1)
-    raw['Referencialidad y conectividad'] = pd.concat([pct_series(givenness), 100 - pct_series(centroid), pct_series(dm)], axis=1).mean(axis=1)
-    raw['Centralidad discursiva y estabilidad'] = pd.concat([pct_series(synt), pct_series(ttr_fun)], axis=1).mean(axis=1)
-    for c in DIMENSIONS:
-        out[c] = raw[c].round(1)
-    out['Perfil multidimensional %'] = raw[DIMENSIONS].mean(axis=1).round(1)
-    return out
-
-
-def predict_with_model(df: pd.DataFrame, model, input_kind: str, metadata: dict) -> pd.DataFrame:
-    if input_kind == 'texto':
-        X = df['texto'].fillna('').astype(str)
-        out = dimensions_from_text(df)
+def estimate_level(profile):
+    score = profile["Perfil multidimensional %"]
+    if score < 25:
+        level = "A1"
+    elif score < 42:
+        level = "A2"
+    elif score < 60:
+        level = "B1"
+    elif score < 78:
+        level = "B2"
     else:
-        features = metadata['features_indices']
-        missing = [c for c in features if c not in df.columns]
-        if missing:
-            raise ValueError('Faltan columnas TRUNAJOD para el modo índices: ' + ', '.join(missing[:15]))
-        X = df[features]
-        out = dimensions_from_indices(df)
-    preds = model.predict(X)
-    probs = model.predict_proba(X)
-    classes = model.named_steps['clf'].classes_
-    out['Nivel_estimado_num'] = preds
-    out['Nivel_estimado_MCER'] = [LEVEL_MAP.get(int(p), str(p)) for p in preds]
-    out['Confianza_%'] = (probs.max(axis=1) * 100).round(1)
-    for i, cls in enumerate(classes):
-        out[f'Prob_{LEVEL_MAP.get(int(cls), str(cls))}_%'] = (probs[:, i] * 100).round(1)
-    return out
+        level = "C1"
 
+    centers = {"A1": 15, "A2": 33, "B1": 51, "B2": 69, "C1": 87}
+    distances = np.array([abs(score - centers[l]) for l in LEVELS])
+    raw = np.exp(-distances / 12)
+    probs = raw / raw.sum()
+    confidence = float(probs[LEVELS.index(level)] * 100)
 
-def to_excel_bytes(result: pd.DataFrame) -> bytes:
+    return level, round(confidence, 1), {f"Prob_{l}_%": round(float(p * 100), 1) for l, p in zip(LEVELS, probs)}
+
+def analyze_dataframe(df):
+    if "texto" not in df.columns:
+        raise ValueError("El archivo debe incluir una columna llamada 'texto'.")
+    if "sujeto" not in df.columns:
+        df.insert(0, "sujeto", [f"texto_{i+1}" for i in range(len(df))])
+
+    rows = []
+    for _, row in df.iterrows():
+        text = str(row["texto"])
+        profile = dimension_scores_from_text(text)
+        level, conf, probs = estimate_level(profile)
+        out = row.to_dict()
+        out.update({
+            "Nivel_estimado_MCER": level,
+            "Confianza_%": conf,
+        })
+        out.update(probs)
+        out.update(profile)
+        rows.append(out)
+
+    return pd.DataFrame(rows)
+
+def to_excel_bytes(result):
     buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        result.to_excel(writer, index=False, sheet_name='Resultados')
-        resumen = result['Nivel_estimado_MCER'].value_counts().rename_axis('Nivel').reset_index(name='n_textos')
-        resumen.to_excel(writer, index=False, sheet_name='Resumen')
-        result[[c for c in ['sujeto','Nivel_estimado_MCER','Confianza_%','Perfil multidimensional %'] + DIMENSIONS if c in result.columns]].to_excel(writer, index=False, sheet_name='Perfil')
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        result.to_excel(writer, index=False, sheet_name="Resultados")
+        resumen = result["Nivel_estimado_MCER"].value_counts().rename_axis("Nivel").reset_index(name="n_textos")
+        resumen.to_excel(writer, index=False, sheet_name="Resumen")
+        cols = [c for c in ["sujeto", "Nivel_estimado_MCER", "Confianza_%", "Perfil multidimensional %"] + DIMENSIONS if c in result.columns]
+        result[cols].to_excel(writer, index=False, sheet_name="Perfil")
     return buffer.getvalue()
 
-st.set_page_config(page_title='TRUNA-ELE Navigator', page_icon='📘', layout='wide')
-st.title('TRUNA-ELE Navigator v1.5')
-st.caption('Sistema de posicionamiento lingüístico-discursivo para producciones escritas en ELE')
+st.set_page_config(page_title="TRUNA-ELE Navigator", page_icon="📘", layout="wide")
 
-metadata = load_metadata()
+st.title("TRUNA-ELE Navigator v1.5")
+st.caption("Sistema demostrativo de posicionamiento lingüístico-discursivo para Español como Lengua Extranjera")
 
-with st.expander('Descripción breve', expanded=True):
-    st.markdown('''
-**TRUNA-ELE Navigator v1.5** estima el posicionamiento de producciones escritas de aprendientes de Español como Lengua Extranjera dentro del continuo **A1-C1**.  
-La salida combina una **estimación de nivel** con un **perfil multidimensional** inspirado en las dimensiones identificadas en los trabajos TRUNA-ELE.
+with st.expander("Descripción breve", expanded=True):
+    st.markdown("""
+**TRUNA-ELE Navigator v1.5** permite analizar producciones escritas de aprendientes de Español como Lengua Extranjera y generar una estimación de posicionamiento dentro del continuo **A1–C1**.
 
-Esta versión incluye dos modos:
+Esta versión está preparada para demostración rápida: recibe textos directamente o mediante Excel con columnas `sujeto` y `texto`, calcula un perfil multidimensional y propone un nivel estimado.
 
-1. **Texto directo / Excel con textos**: permite una demo inmediata desde columnas `sujeto` y `texto`. Usa un extractor textual liviano incorporado en la app.
-2. **Excel con índices TRUNAJOD**: usa el motor entrenado sobre índices TRUNAJOD cuando el archivo ya viene procesado.
+La versión debe presentarse como **prototipo demostrativo y exploratorio**, no como sustituto de evaluación experta ni como versión final validada externamente.
+""")
 
-La versión 1.5 debe presentarse como **prototipo demostrativo y exploratorio**, no como sustituto de evaluación experta ni como versión final validada externamente.
-''')
+mode_label = st.sidebar.radio("Tipo de tarea", ["Narrativo", "Argumentativo"])
+st.sidebar.info(f"Modo seleccionado: {mode_label}")
 
-mode_label = st.sidebar.radio('Tipo de tarea', list(MODE_LABELS.keys()))
-mode_key = MODE_LABELS[mode_label]
-input_label = st.sidebar.radio('Modo de entrada', ['Texto directo / Excel con textos', 'Excel con índices TRUNAJOD'])
-input_kind = 'texto' if input_label.startswith('Texto') else 'indices'
-model = load_model(input_kind, mode_key)
-info = metadata['tasks'][mode_key][f'{input_kind}_model']
+tab1, tab2 = st.tabs(["Subir Excel", "Analizar un texto"])
 
-st.sidebar.subheader('Motor cargado')
-st.sidebar.write(f'**Tarea:** {mode_label}')
-st.sidebar.write(f'**Entrada:** {input_label}')
-st.sidebar.write(f'**Corpus entrenamiento:** {metadata["tasks"][mode_key]["n"]} textos')
-st.sidebar.caption(f'Métrica holdout interna: accuracy={info["holdout_accuracy"]}, F1 macro={info["holdout_f1_macro"]}')
+with tab1:
+    uploaded = st.file_uploader("Subir Excel con columnas sujeto y texto", type=["xlsx"])
+    example = pd.DataFrame({
+        "sujeto": ["demo_001", "demo_002"],
+        "texto": [
+            "Ayer fui al parque con mi familia. Primero caminamos cerca del río y después comimos juntos. Fue un día muy bonito porque todos estábamos contentos.",
+            "La inteligencia artificial puede ayudar a los estudiantes, pero también exige responsabilidad. Por eso, es importante aprender a usarla de manera crítica."
+        ]
+    })
+    st.download_button(
+        "Descargar ejemplo de Excel",
+        data=to_excel_bytes(example),
+        file_name="ejemplo_TRUNA_ELE_textos.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
-if IMG_PATH.exists():
-    with st.expander('Imagen conceptual TRUNA-ELE', expanded=False):
-        st.image(str(IMG_PATH), use_container_width=True)
-
-st.subheader('Entrada')
-if input_kind == 'texto':
-    tab1, tab2 = st.tabs(['Subir Excel', 'Analizar un texto'])
-    with tab1:
-        uploaded = st.file_uploader('Subir Excel con columnas sujeto y texto', type=['xlsx'], key='excel_texto')
-        ex = EXAMPLES_DIR / f'ejemplo_textos_{mode_key}.xlsx'
-        if ex.exists():
-            st.download_button('Descargar ejemplo de textos', data=ex.read_bytes(), file_name=ex.name)
-        run_excel = uploaded is not None
-    with tab2:
-        single_id = st.text_input('ID del texto', value='demo_001')
-        single_text = st.text_area('Pegar producción escrita', height=220)
-        run_single = st.button('Analizar texto pegado')
-else:
-    uploaded = st.file_uploader('Subir Excel con índices TRUNAJOD', type=['xlsx'], key='excel_indices')
-    ex = EXAMPLES_DIR / f'ejemplo_indices_{mode_key}.xlsx'
-    if ex.exists():
-        st.download_button('Descargar ejemplo con índices TRUNAJOD', data=ex.read_bytes(), file_name=ex.name)
-    run_excel = uploaded is not None
-    run_single = False
+with tab2:
+    single_id = st.text_input("ID del texto", value="demo_001")
+    single_text = st.text_area("Pegar producción escrita", height=220)
+    run_single = st.button("Analizar texto pegado")
 
 try:
     df = None
-    if input_kind == 'texto' and run_single:
-        df = pd.DataFrame({'sujeto': [single_id], 'texto': [single_text]})
-    elif run_excel:
+    if uploaded is not None:
         df = pd.read_excel(uploaded)
-    if df is not None:
-        if input_kind == 'texto':
-            if 'texto' not in df.columns:
-                st.error('El archivo debe incluir una columna llamada texto.')
-                st.stop()
-            if 'sujeto' not in df.columns:
-                df.insert(0, 'sujeto', [f'texto_{i+1}' for i in range(len(df))])
-        else:
-            if 'tarea' in df.columns:
-                df = df[df['tarea'] == metadata['tasks'][mode_key]['tarea']].copy()
-                if df.empty:
-                    st.error('No hay filas para la tarea seleccionada según la columna tarea.')
-                    st.stop()
-        result = predict_with_model(df, model, input_kind, metadata)
-        st.success(f'Análisis completado: {len(result)} texto(s).')
+    elif run_single:
+        df = pd.DataFrame({"sujeto": [single_id], "texto": [single_text]})
 
-        main_cols = [c for c in ['sujeto','Nivel_estimado_MCER','Confianza_%','Perfil multidimensional %'] if c in result.columns]
-        prob_cols = [c for c in result.columns if c.startswith('Prob_')]
-        st.subheader('Resultado de posicionamiento')
+    if df is not None:
+        result = analyze_dataframe(df)
+        st.success(f"Análisis completado: {len(result)} texto(s).")
+
+        main_cols = [c for c in ["sujeto", "Nivel_estimado_MCER", "Confianza_%", "Perfil multidimensional %"] if c in result.columns]
+        prob_cols = [c for c in result.columns if c.startswith("Prob_")]
+
+        st.subheader("Resultado de posicionamiento")
         st.dataframe(result[main_cols + prob_cols], use_container_width=True)
 
-        st.subheader('Perfil multidimensional')
-        profile_cols = [c for c in ['sujeto','Nivel_estimado_MCER'] + DIMENSIONS if c in result.columns]
+        st.subheader("Perfil multidimensional")
+        profile_cols = [c for c in ["sujeto", "Nivel_estimado_MCER"] + DIMENSIONS if c in result.columns]
         st.dataframe(result[profile_cols], use_container_width=True)
 
         if len(result) == 1:
-            vals = result.iloc[0][DIMENSIONS]
+            vals = result.iloc[0][DIMENSIONS].astype(float)
             st.bar_chart(vals)
 
         st.download_button(
-            'Descargar resultados en Excel',
+            "Descargar resultados en Excel",
             data=to_excel_bytes(result),
-            file_name=f'TRUNA_ELE_Navigator_{mode_key}_resultados.xlsx',
-            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            file_name="TRUNA_ELE_Navigator_resultados.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     else:
-        st.info('Sube un archivo o pega un texto para iniciar la demostración.')
+        st.info("Sube un archivo o pega un texto para iniciar la demostración.")
+
 except Exception as exc:
-    st.error(f'No fue posible procesar la entrada: {exc}')
+    st.error(f"No fue posible procesar la entrada: {exc}")
+
 
