@@ -298,20 +298,30 @@ def dimension_scores_argumentative(text):
 def estimate_level(profile):
     score = profile["Perfil multidimensional %"]
 
-    if score < 25:
+    # Escala calibrada v1.1.
+    # Ajuste realizado porque los motores actuales generan perfiles comprimidos:
+    # textos avanzados quedaban excesivamente concentrados en B1.
+    if score < 18:
         level = "A1"
-    elif score < 42:
+    elif score < 32:
         level = "A2"
-    elif score < 60:
+    elif score < 48:
         level = "B1"
-    elif score < 78:
+    elif score < 62:
         level = "B2"
     else:
         level = "C1"
 
-    centers = {"A1": 15, "A2": 33, "B1": 51, "B2": 69, "C1": 87}
+    centers = {
+        "A1": 10,
+        "A2": 25,
+        "B1": 40,
+        "B2": 55,
+        "C1": 72,
+    }
+
     distances = np.array([abs(score - centers[l]) for l in LEVELS])
-    raw = np.exp(-distances / 12)
+    raw = np.exp(-distances / 10)
     probs = raw / raw.sum()
     confidence = float(probs[LEVELS.index(level)] * 100)
 
