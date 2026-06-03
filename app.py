@@ -1,8 +1,28 @@
 import io
 import re
+import sys
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import streamlit as st
+
+# ============================================================
+# TRUNA-ELE Navigator
+# app.py integrado v2
+#
+# Modos:
+# 1) Texto libre:
+#    - Usa motor textual demo/heurístico.
+#
+# 2) Excel con índices TRUNAJOD:
+#    - Si modo = Narrativo y el Excel contiene las columnas requeridas,
+#      usa motor_narrativo_v2_defendible.py desde carpetas/modelos/.
+#
+# Requisito en GitHub:
+# carpetas/modelos/motor_narrativo_v2_defendible.py
+# carpetas/modelos/metadata_truna_ele_narrativo_v2_defendible.json
+# ============================================================
 
 LEVELS = ["A1", "A2", "B1", "B2", "C1"]
 
@@ -31,8 +51,48 @@ CONNECTORS = {
     "antes", "finalmente", "primero", "segundo", "por ejemplo"
 }
 
-POS_WORDS = {"feliz", "contento", "alegre", "bueno", "bonito", "interesante", "maravilloso", "mejor"}
-NEG_WORDS = {"triste", "malo", "difícil", "problema", "peor", "aburrido", "cansado", "preocupado"}
+POS_WORDS = {
+    "feliz", "contento", "alegre", "bueno", "bonito",
+    "interesante", "maravilloso", "mejor"
+}
+
+NEG_WORDS = {
+    "triste", "malo", "difícil", "problema", "peor",
+    "aburrido", "cansado", "preocupado"
+}
+
+
+# ============================================================
+# Carga opcional del Motor Narrativo v2 Defendible
+# ============================================================
+
+APP_DIR = Path(__file__).resolve().parent
+MODEL_DIR = APP_DIR / "carpetas" / "modelos"
+
+if MODEL_DIR.exists():
+    sys.path.append(str(MODEL_DIR))
+
+try:
+    from motor_narrativo_v2_defendible import predict_narrative_v2, MODEL_PARAMS
+    NARRATIVE_V2_AVAILABLE = True
+except Exception:
+    predict_narrative_v2 = None
+    MODEL_PARAMS = None
+    NARRATIVE_V2_AVAILABLE = False
+
+
+def excel_has_narrative_v2_features(df):
+    """Verifica si el Excel contiene las columnas requeridas por el motor narrativo v2."""
+    if not NARRATIVE_V2_AVAILABLE or MODEL_PARAMS is None:
+        return False
+
+    required = MODEL_PARAMS.get("features", [])
+    return all(col in df.columns for col in required)
+
+
+# ============================================================
+# Configuración de página
+# ============================================================
 
 st.set_page_config(
     page_title="TRUNA-ELE Navigator",
@@ -119,6 +179,10 @@ CUSTOM_CSS = """
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
+
+# ============================================================
+# Funciones demo textuales
+# ============================================================
 
 def words(text):
     return re.findall(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+", str(text).lower())
@@ -298,9 +362,6 @@ def dimension_scores_argumentative(text):
 def estimate_level(profile):
     score = profile["Perfil multidimensional %"]
 
-    # Escala calibrada v1.1.
-    # Ajuste realizado porque los motores actuales generan perfiles comprimidos:
-    # textos avanzados quedaban excesivamente concentrados en B1.
     if score < 18:
         level = "A1"
     elif score < 32:
@@ -331,9 +392,14 @@ def estimate_level(profile):
     }
 
 
-def analyze_dataframe(df, mode_label):
+# ============================================================
+# Análisis
+# ============================================================
+
+def analyze_text_demo_dataframe(df, mode_label):
+    """Ruta demo: analiza texto crudo con heurísticas simples."""
     if "texto" not in df.columns:
-        raise ValueError("El archivo debe incluir una columna llamada 'texto'.")
+        raise ValueError("El archivo debe incluir una columna llamada 'texto' para usar la ruta demo textual.")
 
     if "sujeto" not in df.columns:
         df.insert(0, "sujeto", [f"texto_{i+1}" for i in range(len(df))])
@@ -353,6 +419,7 @@ def analyze_dataframe(df, mode_label):
         out = row.to_dict()
         out.update({
             "Tipo de tarea": mode_label,
+            "motor_utilizado": "Demo textual heurística",
             "Nivel estimado": level,
             "Confianza": conf,
         })
@@ -363,6 +430,27 @@ def analyze_dataframe(df, mode_label):
     return pd.DataFrame(rows)
 
 
+def analyze_dataframe(df, mode_label, source_kind):
+    """
+    Decide qué motor usar.
+
+    source_kind:
+    - "excel": archivo subido.
+    - "text": texto pegado.
+    """
+    if mode_label == "Narrativo" and source_kind == "excel" and excel_has_narrative_v2_features(df):
+        result = predict_narrative_v2(df)
+
+        # Normalización de nombres para que la interfaz use columnas comunes.
+        result["Tipo de tarea"] = "Narrativo"
+        result["Nivel estimado"] = result["nivel_estimado_v2"]
+        result["Confianza"] = result["confianza_v2"]
+
+        return result
+
+    return analyze_text_demo_dataframe(df, mode_label)
+
+
 def to_excel_bytes(result, mode_label):
     dimensions = DIMENSIONS_BY_MODE[mode_label]
 
@@ -371,15 +459,29 @@ def to_excel_bytes(result, mode_label):
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         result.to_excel(writer, index=False, sheet_name="Resultados")
 
-        resumen = result["Nivel estimado"].value_counts().rename_axis("Nivel").reset_index(name="n_textos")
-        resumen.to_excel(writer, index=False, sheet_name="Resumen")
+        if "Nivel estimado" in result.columns:
+            resumen = result["Nivel estimado"].value_counts().rename_axis("Nivel").reset_index(name="n_textos")
+            resumen.to_excel(writer, index=False, sheet_name="Resumen")
+
+        base_cols = [
+            "sujeto", "Tipo de tarea", "motor_utilizado",
+            "Nivel estimado", "Confianza", "Perfil multidimensional %",
+            "nivel_estimado_v2_num", "confianza_v2",
+            "margen_decision_v2", "zona_transicion_v2"
+        ]
+
+        prob_cols = [
+            c for c in result.columns
+            if c.startswith("Prob.") or c.startswith("Prob_v2_")
+        ]
 
         cols = [
-            c for c in
-            ["sujeto", "Tipo de tarea", "Nivel estimado", "Confianza", "Perfil multidimensional %"] + dimensions
+            c for c in base_cols + prob_cols + dimensions
             if c in result.columns
         ]
-        result[cols].to_excel(writer, index=False, sheet_name="Perfil")
+
+        if cols:
+            result[cols].to_excel(writer, index=False, sheet_name="Perfil")
 
     return buffer.getvalue()
 
@@ -401,15 +503,26 @@ def excel_example_bytes():
     return buffer.getvalue()
 
 
+# ============================================================
+# Interfaz
+# ============================================================
+
 st.sidebar.markdown("### Configuración")
 mode_label = st.sidebar.radio("Tipo de tarea", ["Narrativo", "Argumentativo"])
 st.sidebar.success(f"Modo seleccionado: {mode_label}")
 st.sidebar.markdown("---")
 
 if mode_label == "Narrativo":
-    st.sidebar.caption(
-        "Motor Narrativo v1.1: versión estable actual, basada en seis dimensiones narrativas y calibración preliminar."
-    )
+    if NARRATIVE_V2_AVAILABLE:
+        st.sidebar.caption(
+            "Motor Narrativo v2 disponible para Excel con índices TRUNAJOD. "
+            "Texto libre usa demo heurística."
+        )
+    else:
+        st.sidebar.warning(
+            "Motor Narrativo v2 no detectado. "
+            "Verifica que exista carpetas/modelos/motor_narrativo_v2_defendible.py"
+        )
 else:
     st.sidebar.caption(
         "Motor Argumentativo v0.1: versión exploratoria preliminar basada en dimensiones argumentativas en desarrollo."
@@ -424,7 +537,7 @@ st.markdown("""
         <span class="badge">A1–C1</span>
         <span class="badge">Narrativo / Argumentativo</span>
         <span class="badge">Perfil multidimensional</span>
-        <span class="badge">Motor diferenciado por tarea</span>
+        <span class="badge">Motor TRUNAJOD para Excel</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -433,18 +546,13 @@ st.markdown("""
 with st.expander("Información metodológica", expanded=False):
     if mode_label == "Narrativo":
         st.markdown("""
-Esta versión utiliza un **Motor Narrativo v1**, alineado con el modelo TRUNA-ELE para escritura narrativa.
+Esta versión incorpora dos rutas de análisis:
 
-El perfil se organiza en seis dimensiones:
+**1. Texto libre:** usa una ruta demo heurística que permite probar el flujo general de la plataforma.
 
-1. Dispersión y Variedad Estructural.
-2. Coherencia Semántica Global y Progresión.
-3. Riqueza Léxica Nominal y Precisión.
-4. Carga Emocional Positiva-Negativa.
-5. Referencialidad Difusa y Conectividad Afectiva.
-6. Centralidad Discursiva y Estabilidad.
+**2. Excel con índices TRUNAJOD:** si el archivo contiene los índices requeridos por el Motor Narrativo v2 Defendible, el sistema utiliza un modelo transparente basado en índices TRUNAJOD reales.
 
-El puntaje global se calcula mediante una ponderación inspirada en la varianza explicada por el ACP narrativo. Esta versión es funcional para demostración y exploración, aunque la clasificación fina deberá integrarse posteriormente con índices TRUNAJOD reales.
+El Motor Narrativo v2 Defendible se concibe como un sistema de **posicionamiento lingüístico-discursivo**, no como una reproducción mecánica de etiquetas humanas. Dado el solapamiento observado entre niveles humanos, el sistema reporta nivel estimado, confianza, margen de decisión y zona de transición.
 """)
     else:
         st.markdown("""
@@ -467,10 +575,17 @@ tab1, tab2 = st.tabs(["📄 Subir Excel", "✍️ Analizar un texto"])
 
 with tab1:
     st.markdown('<div class="section-title">Analizar un archivo Excel</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="muted">El archivo debe contener al menos una columna <b>texto</b>. Opcionalmente puede incluir <b>sujeto</b>.</div>',
-        unsafe_allow_html=True
-    )
+
+    if mode_label == "Narrativo":
+        st.markdown(
+            '<div class="muted">Si el Excel contiene índices TRUNAJOD narrativos, se usará el Motor Narrativo v2 Defendible. Si solo contiene <b>texto</b>, se usará la ruta demo textual.</div>',
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown(
+            '<div class="muted">El archivo debe contener al menos una columna <b>texto</b>. Opcionalmente puede incluir <b>sujeto</b>.</div>',
+            unsafe_allow_html=True
+        )
 
     uploaded = st.file_uploader("Subir Excel", type=["xlsx"], label_visibility="collapsed")
 
@@ -504,20 +619,26 @@ with tab2:
 
 try:
     df = None
+    source_kind = None
 
     if uploaded is not None:
         df = pd.read_excel(uploaded)
+        source_kind = "excel"
     elif run_single:
         df = pd.DataFrame({
             "sujeto": [single_id],
             "texto": [single_text]
         })
+        source_kind = "text"
 
     if df is not None:
-        result = analyze_dataframe(df, mode_label)
+        result = analyze_dataframe(df, mode_label, source_kind)
         dimensions = DIMENSIONS_BY_MODE[mode_label]
 
         st.markdown('<div class="section-title">Resultado principal</div>', unsafe_allow_html=True)
+
+        motor_name = result["motor_utilizado"].iloc[0] if "motor_utilizado" in result.columns else "No especificado"
+        st.info(f"Motor utilizado: {motor_name}")
 
         if len(result) == 1:
             r = result.iloc[0]
@@ -534,43 +655,66 @@ try:
 
             with c2:
                 st.metric("Confianza", f'{r["Confianza"]}%')
-                st.metric("Perfil multidimensional", f'{r["Perfil multidimensional %"]}%')
+
+                if "Perfil multidimensional %" in result.columns:
+                    st.metric("Perfil multidimensional", f'{r["Perfil multidimensional %"]}%')
+
+                if "margen_decision_v2" in result.columns:
+                    st.metric("Margen decisión", f'{r["margen_decision_v2"]}%')
 
             with c3:
-                prob_cols = [c for c in result.columns if c.startswith("Prob.")]
-                st.dataframe(
-                    result[["sujeto", "Tipo de tarea"] + prob_cols],
-                    use_container_width=True,
-                    hide_index=True
-                )
+                prob_cols = [
+                    c for c in result.columns
+                    if c.startswith("Prob.") or c.startswith("Prob_v2_")
+                ]
 
-            st.markdown('<div class="section-title">Perfil multidimensional</div>', unsafe_allow_html=True)
+                cols_to_show = [
+                    c for c in ["sujeto", "Tipo de tarea", "zona_transicion_v2"] + prob_cols
+                    if c in result.columns
+                ]
+                st.dataframe(result[cols_to_show], use_container_width=True, hide_index=True)
 
-            vals = result.iloc[0][dimensions].astype(float)
-            st.bar_chart(vals)
+            if "zona_transicion_v2" in result.columns:
+                st.warning(f"Zona de transición: {r['zona_transicion_v2']}")
 
-            profile_cols = [
-                c for c in ["sujeto", "Tipo de tarea", "Nivel estimado"] + dimensions
-                if c in result.columns
-            ]
-            st.dataframe(result[profile_cols], use_container_width=True, hide_index=True)
+            # Perfil gráfico: solo disponible en ruta demo textual.
+            available_dimensions = [c for c in dimensions if c in result.columns]
+            if available_dimensions:
+                st.markdown('<div class="section-title">Perfil multidimensional</div>', unsafe_allow_html=True)
+                vals = result.iloc[0][available_dimensions].astype(float)
+                st.bar_chart(vals)
+
+                profile_cols = [
+                    c for c in ["sujeto", "Tipo de tarea", "Nivel estimado"] + available_dimensions
+                    if c in result.columns
+                ]
+                st.dataframe(result[profile_cols], use_container_width=True, hide_index=True)
 
         else:
             main_cols = [
-                c for c in ["sujeto", "Tipo de tarea", "Nivel estimado", "Confianza", "Perfil multidimensional %"]
+                c for c in [
+                    "sujeto", "Tipo de tarea", "motor_utilizado",
+                    "Nivel estimado", "Confianza",
+                    "margen_decision_v2", "zona_transicion_v2",
+                    "Perfil multidimensional %"
+                ]
                 if c in result.columns
             ]
-            prob_cols = [c for c in result.columns if c.startswith("Prob.")]
+            prob_cols = [
+                c for c in result.columns
+                if c.startswith("Prob.") or c.startswith("Prob_v2_")
+            ]
 
             st.dataframe(result[main_cols + prob_cols], use_container_width=True, hide_index=True)
 
-            st.markdown('<div class="section-title">Perfil multidimensional</div>', unsafe_allow_html=True)
-
-            profile_cols = [
-                c for c in ["sujeto", "Tipo de tarea", "Nivel estimado"] + dimensions
-                if c in result.columns
-            ]
-            st.dataframe(result[profile_cols], use_container_width=True, hide_index=True)
+            available_dimensions = [c for c in dimensions if c in result.columns]
+            if available_dimensions:
+                st.markdown('<div class="section-title">Perfil multidimensional</div>', unsafe_allow_html=True)
+                profile_cols = [
+                    c for c in ["sujeto", "Tipo de tarea", "Nivel estimado"] + available_dimensions
+                    if c in result.columns
+                ]
+                st.dataframe(result[profile_cols], use_container_width=True, hide_index=True)
 
         st.download_button(
             "Descargar resultados en Excel",
@@ -584,3 +728,4 @@ try:
 
 except Exception as exc:
     st.error(f"No fue posible procesar la entrada: {exc}")
+
