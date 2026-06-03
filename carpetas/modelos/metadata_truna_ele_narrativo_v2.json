@@ -1,1 +1,291 @@
-
+{
+  "engine_name": "TRUNA-ELE Narrativo v2",
+  "engine_type": "Modelo supervisado preliminar con índices TRUNAJOD reales",
+  "version": "v2.0-preliminar",
+  "date": "2026-06-03",
+  "training_file": "1c.-SinID_EST_Tarea1_solo.xlsx",
+  "n_rows": 2326,
+  "n_features_used": 76,
+  "target_column": "nivel",
+  "label_mapping": {
+    "1": "A1",
+    "2": "A2",
+    "3": "B1",
+    "4": "B2",
+    "5": "C1"
+  },
+  "excluded_columns": [
+    "approx_spell_errors",
+    "nivel",
+    "sujeto",
+    "tarea",
+    "texto"
+  ],
+  "required_feature_columns": [
+    "others",
+    "joy",
+    "sadness",
+    "anger",
+    "surprise",
+    "disgust",
+    "fear",
+    "NEG",
+    "NEU",
+    "POS",
+    "TTR lemma",
+    "TTR noun",
+    "TTR verb",
+    "TTR function",
+    "TTR content",
+    "TTR adj",
+    "TTR adv",
+    "TTR prp",
+    "TTR Diversidad léxica MTLD",
+    "TTR argument",
+    "SM noun_syn_overlap",
+    "SM verb_syn_overlap",
+    "SM word2vec_sent_sim",
+    "SM lexical_overlap",
+    "LSM concreteness",
+    "LSM imageability",
+    "LSM familiarity",
+    "LSM avg_context_availability",
+    "LSM argument_ttr",
+    "EG local_coherence_PU",
+    "EG local_coherence_PW",
+    "EG local_coherence_PACC",
+    "EG local_coherence_PU_dist",
+    "EG local_coherence_PW_dist",
+    "EG local_coherence_PACC_dist",
+    "SP Densidad Léxica",
+    "SP Verbos / Sustantivos",
+    "SP connecting words",
+    "SP syntactic similarity",
+    "SP Promedio Longitud Oracion",
+    "SP Promedio Longitud Palabras letra",
+    "SP Densidad de negación",
+    "SP Palabras antes de la raíz",
+    "SP Promedio Longitud Palabras sílaba",
+    "SP Densidad de NOUN|PROPN",
+    "SP Densidad de NOUN",
+    "SP Densidad de ADJ",
+    "SP Densidad de VERB|AUX",
+    "DM polysemic discourse markers",
+    "DM cause discourse markers",
+    "DM vague meaning",
+    "DM all types of discourse markers",
+    "avg_cos_dist",
+    "max_cos_dist",
+    "min_cos_dist",
+    "max_min_dist_ratio",
+    "avg_nn_distance",
+    "max_nn_distance",
+    "min_nn_distance",
+    "max_min_nn_dist",
+    "r_distance",
+    "cum_freq_dist_nn_dist",
+    "avg_givenness",
+    "max_givenness",
+    "min_givenness",
+    "max_min_giv_ratio",
+    "avg_givenness_proj",
+    "min_givenness_proj",
+    "max_givenness_proj",
+    "kl_div",
+    "avg_dist_to_centroid",
+    "max_dist_to_centroid",
+    "min_dist_to_centroid",
+    "std_distance",
+    "relative_distance",
+    "det_dist"
+  ],
+  "metrics_holdout_25_percent": {
+    "accuracy": 0.46563573883161513,
+    "macro_f1": 0.46516139344108787,
+    "classification_report": {
+      "1": {
+        "precision": 0.5865384615384616,
+        "recall": 0.580952380952381,
+        "f1-score": 0.583732057416268,
+        "support": 105.0
+      },
+      "2": {
+        "precision": 0.46153846153846156,
+        "recall": 0.2702702702702703,
+        "f1-score": 0.3409090909090909,
+        "support": 111.0
+      },
+      "3": {
+        "precision": 0.6235294117647059,
+        "recall": 0.44166666666666665,
+        "f1-score": 0.5170731707317073,
+        "support": 120.0
+      },
+      "4": {
+        "precision": 0.3710691823899371,
+        "recall": 0.48360655737704916,
+        "f1-score": 0.4199288256227758,
+        "support": 122.0
+      },
+      "5": {
+        "precision": 0.40236686390532544,
+        "recall": 0.5483870967741935,
+        "f1-score": 0.4641638225255973,
+        "support": 124.0
+      },
+      "accuracy": 0.46563573883161513,
+      "macro avg": {
+        "precision": 0.48900847622737825,
+        "recall": 0.4649765944081121,
+        "f1-score": 0.46516139344108787,
+        "support": 582.0
+      },
+      "weighted avg": {
+        "precision": 0.485918846185404,
+        "recall": 0.46563573883161513,
+        "f1-score": 0.4638645813171389,
+        "support": 582.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        61,
+        14,
+        7,
+        15,
+        8
+      ],
+      [
+        27,
+        30,
+        10,
+        23,
+        21
+      ],
+      [
+        7,
+        10,
+        53,
+        26,
+        24
+      ],
+      [
+        7,
+        3,
+        5,
+        59,
+        48
+      ],
+      [
+        2,
+        8,
+        10,
+        36,
+        68
+      ]
+    ]
+  },
+  "top_25_feature_importances": [
+    {
+      "feature": "r_distance",
+      "importance": 0.025491607386800903
+    },
+    {
+      "feature": "POS",
+      "importance": 0.018264076409891392
+    },
+    {
+      "feature": "NEG",
+      "importance": 0.01781328330052212
+    },
+    {
+      "feature": "joy",
+      "importance": 0.01745552757211898
+    },
+    {
+      "feature": "kl_div",
+      "importance": 0.016623545221390146
+    },
+    {
+      "feature": "SM word2vec_sent_sim",
+      "importance": 0.016192228015954952
+    },
+    {
+      "feature": "TTR content",
+      "importance": 0.016073938105183285
+    },
+    {
+      "feature": "SP Densidad de NOUN",
+      "importance": 0.016073067713308697
+    },
+    {
+      "feature": "SP Densidad de NOUN|PROPN",
+      "importance": 0.015798238165612086
+    },
+    {
+      "feature": "SP Densidad Léxica",
+      "importance": 0.015763049657452344
+    },
+    {
+      "feature": "TTR verb",
+      "importance": 0.015179070561429375
+    },
+    {
+      "feature": "LSM familiarity",
+      "importance": 0.01471165579930917
+    },
+    {
+      "feature": "avg_dist_to_centroid",
+      "importance": 0.014518259521848764
+    },
+    {
+      "feature": "EG local_coherence_PU",
+      "importance": 0.014439362001149538
+    },
+    {
+      "feature": "NEU",
+      "importance": 0.014172050015661602
+    },
+    {
+      "feature": "others",
+      "importance": 0.014168329321684825
+    },
+    {
+      "feature": "TTR function",
+      "importance": 0.014092234374149868
+    },
+    {
+      "feature": "min_dist_to_centroid",
+      "importance": 0.013871194027795646
+    },
+    {
+      "feature": "SP Promedio Longitud Palabras letra",
+      "importance": 0.013813384359685136
+    },
+    {
+      "feature": "TTR adj",
+      "importance": 0.013737294164631543
+    },
+    {
+      "feature": "TTR prp",
+      "importance": 0.01372031335920702
+    },
+    {
+      "feature": "SM verb_syn_overlap",
+      "importance": 0.013579829400586775
+    },
+    {
+      "feature": "EG local_coherence_PW",
+      "importance": 0.013490002999127402
+    },
+    {
+      "feature": "DM all types of discourse markers",
+      "importance": 0.013372345326309452
+    },
+    {
+      "feature": "TTR lemma",
+      "importance": 0.01334532459928699
+    }
+  ],
+  "important_note": "Este modelo es una primera integración real basada en índices TRUNAJOD. Debe considerarse preliminar. Su objetivo inmediato es superar la ruta heurística textual y permitir pruebas con archivos Excel que ya contengan índices TRUNAJOD."
+}
