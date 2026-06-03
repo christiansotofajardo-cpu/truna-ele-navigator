@@ -408,11 +408,11 @@ st.sidebar.markdown("---")
 
 if mode_label == "Narrativo":
     st.sidebar.caption(
-        "Motor Narrativo v1: basado en las seis dimensiones narrativas del modelo TRUNA-ELE."
+        "Motor Narrativo v1.1: versión estable actual, basada en seis dimensiones narrativas y calibración preliminar."
     )
 else:
     st.sidebar.caption(
-        "Motor Argumentativo v0.1: versión exploratoria basada en las dimensiones preliminares del ACP argumentativo."
+        "Motor Argumentativo v0.1: versión exploratoria preliminar basada en dimensiones argumentativas en desarrollo."
     )
 
 
@@ -444,7 +444,7 @@ El perfil se organiza en seis dimensiones:
 5. Referencialidad Difusa y Conectividad Afectiva.
 6. Centralidad Discursiva y Estabilidad.
 
-El puntaje global se calcula mediante una ponderación inspirada en la varianza explicada por el ACP narrativo.
+El puntaje global se calcula mediante una ponderación inspirada en la varianza explicada por el ACP narrativo. Esta versión es funcional para demostración y exploración, aunque la clasificación fina deberá integrarse posteriormente con índices TRUNAJOD reales.
 """)
     else:
         st.markdown("""
@@ -459,7 +459,7 @@ El perfil se organiza en seis dimensiones:
 5. Construcción Sintáctica y Organización Informativa.
 6. Posicionamiento Discursivo y Polaridad.
 
-Esta versión deberá ser refinada con el ACP formal argumentativo, la matriz de cargas y los modelos predictivos finales.
+Esta versión deberá ser refinada con el ACP formal argumentativo, la matriz de cargas y los modelos predictivos finales. Por ahora funciona como motor exploratorio de demostración.
 """)
 
 
