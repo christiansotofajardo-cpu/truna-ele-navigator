@@ -314,9 +314,24 @@ def dimension_scores_narrative(text):
     scores["Centralidad Discursiva y Estabilidad"] = round(float(np.clip(centralidad, 0, 100)), 1)
 
     total_weight = sum(weights.values())
-    scores["Perfil multidimensional %"] = round(
-        sum(scores[k] * weights[k] for k in weights) / total_weight, 1
-    )
+    weighted_profile = sum(scores[k] * weights[k] for k in weights) / total_weight
+
+    # Calibración textual demo v2.1:
+    # Se agrega una señal de sofisticación textual para separar mejor extremos A1-C1
+    # cuando el usuario sube solo sujeto + texto y TRUNAJOD completo aún no está integrado.
+    proficiency_proxy = np.mean([
+        pct(f["n_words"], 70, 220),
+        pct(f["avg_sentence_length"], 7, 18),
+        pct(f["avg_word_len"], 3.6, 4.6),
+        pct(f["long_word_ratio"], 0.10, 0.25),
+        pct(f["connector_ratio"], 0.03, 0.08),
+        pct(f["abstract_ratio"], 0.01, 0.07),
+    ])
+
+    adjusted_profile = (0.35 * weighted_profile) + (0.65 * proficiency_proxy)
+
+    scores["Puntaje demo textual ajustado"] = round(adjusted_profile, 1)
+    scores["Perfil multidimensional %"] = round(adjusted_profile, 1)
 
     return scores
 
@@ -383,27 +398,30 @@ def dimension_scores_argumentative(text):
 def estimate_level(profile):
     score = profile["Perfil multidimensional %"]
 
-    if score < 22:
+    # Cortes demo v2.1:
+    # Ajustados para evitar concentración excesiva en B1/B2 en archivos de textos.
+    # Esta calibración es demostrativa; no reemplaza el modelo científico final con TRUNAJOD completo.
+    if score < 24:
         level = "A1"
-    elif score < 38:
+    elif score < 40:
         level = "A2"
-    elif score < 53:
+    elif score < 55:
         level = "B1"
-    elif score < 68:
+    elif score < 64:
         level = "B2"
     else:
         level = "C1"
 
     centers = {
-        "A1": 12,
-        "A2": 30,
-        "B1": 46,
-        "B2": 61,
-        "C1": 78,
+        "A1": 14,
+        "A2": 32,
+        "B1": 48,
+        "B2": 59,
+        "C1": 70,
     }
 
     distances = np.array([abs(score - centers[l]) for l in LEVELS])
-    raw = np.exp(-distances / 10)
+    raw = np.exp(-distances / 9)
     probs = raw / raw.sum()
     confidence = float(probs[LEVELS.index(level)] * 100)
 
@@ -557,7 +575,7 @@ with st.expander("Información metodológica", expanded=False):
     st.markdown("""
 Esta versión permite analizar archivos Excel con columnas **sujeto** y **texto**, generando un nivel estimado y un perfil multidimensional.
 
-Para efectos de demostración, el sistema utiliza un motor textual estimativo inspirado en las dimensiones TRUNA-ELE. En versiones posteriores, esta ruta será reemplazada por la integración completa de TRUNAJOD detrás de la interfaz.
+Para efectos de demostración, el sistema utiliza un motor textual estimativo calibrado para separar mejor niveles extremos, inspirado en las dimensiones TRUNA-ELE. En versiones posteriores, esta ruta será reemplazada por la integración completa de TRUNAJOD detrás de la interfaz.
 
 Si el archivo contiene índices TRUNAJOD completos y está disponible el motor externo, la aplicación puede usar el Motor Narrativo v2 Defendible.
 """)
@@ -727,3 +745,4 @@ try:
 
 except Exception as exc:
     st.error(f"No fue posible procesar la entrada: {exc}")
+
